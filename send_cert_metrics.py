@@ -21,17 +21,26 @@ def send_metrics(csv_file_path):
             reader = csv.DictReader(file)
             
             for row in reader:
-                cluster = row['cluster name'].strip()
-                namespace = row['namespace'].strip()
-                cert = row['certificate name'].strip()
-                days_due = int(row['days due'].strip())
-                renewal = row['method of renewal'].strip().replace(" ", "_").replace("/", "-")
+                # Extract fields based on the exact headers in sample.csv
+                cluster = row.get('Cluster Name', '').strip()
+                namespace = row.get('Namespace Name', '').strip()
+                cert = row.get('Certificate Name', '').strip()
+                expiry_date = row.get('Expiry Date', '').strip()
+                
+                # Format expiry date for tagging (replace spaces and colons to prevent DogStatsD parsing errors)
+                safe_expiry = expiry_date.replace(" ", "_").replace(":", "-")
+                
+                try:
+                    days_due = int(row.get('Days Due', 0))
+                except ValueError:
+                    print(f"Skipping row due to invalid 'Days Due' value: {row.get('Days Due')}")
+                    continue
                 
                 # Format metric line with custom tags
                 # Metric type 'g' represents a Gauge
                 metric_line = (
                     f"kubernetes.certificate.days_due:{days_due}|g|"
-                    f"#cluster:{cluster},namespace:{namespace},certificate:{cert},method_of_renewal:{renewal}"
+                    f"#cluster:{cluster},namespace:{namespace},certificate:{cert},expiry_date:{safe_expiry}"
                 )
                 
                 sock.sendto(metric_line.encode('utf-8'), (DOGSTATSD_HOST, DOGSTATSD_PORT))
@@ -43,6 +52,6 @@ def send_metrics(csv_file_path):
         sock.close()
 
 if __name__ == "__main__":
-    # Specify full path to sample.csv if needed
+    # Assumes sample.csv is in the same directory as the script
     csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sample.csv')
     send_metrics(csv_path)
